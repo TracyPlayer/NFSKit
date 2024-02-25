@@ -39,24 +39,6 @@ struct rpc_context;
 EXTERN struct rpc_context *rpc_init_context(void);
 EXTERN void rpc_destroy_context(struct rpc_context *rpc);
 
-/*
- * Commands that are in flight are kept on linked lists and keyed by
- * XID so that responses received can be matched with a request.
- * For performance reasons, this would not scale well for applications
- * that use many concurrent async requests concurrently.
- * The default setting is to hash the requests into a small number of
- * lists which should work well for single threaded syncrhonous and
- * async applications with a moderate number of concurrent requests in flight
- * at any one time.
- * If you application uses a significant number of concurrent requests
- * as in thousands or more, then the default might not be sufficient.
- * In that case you can change the number of lists that requests will
- * be hashed into with this function.
- * NOTE: you can only call this function and modify the number of hashes
- * before you connect to the remote service.
- */
-EXTERN int rpc_set_hash_size(struct rpc_context *rpc, int hashes);
-        
 EXTERN void rpc_set_auth(struct rpc_context *rpc, struct AUTH *auth);
 
 /*
@@ -93,27 +75,8 @@ EXTERN int rpc_service(struct rpc_context *rpc, int revents);
  * Returns the number of commands in-flight. Can be used by the application
  * to check if there are any more responses we are awaiting from the server
  * or if the connection is completely idle.
- * The number returned includes the commands on the output queue and the
- * commands waiting from a response from the server.
  */
 EXTERN int rpc_queue_length(struct rpc_context *rpc);
-
-/*
- * Returns the number of commands awaiting from the server.
- * Can be used by the application to check if there are any
- * more responses we are awaiting from the server
- * or if the connection is completely idle.
- */
-EXTERN int rpc_get_num_awaiting(struct rpc_context *rpc);
-
-/*
- * Used to limit the total number of commands awaiting from the server.
- * By default there is no limit, all commands will be sent as soon as possible.
- * If a limit is set and it is reached then new commands will be kept on
- * the output queue until the total number of commands in-flight goes below
- * the limit again.
- */
-EXTERN void rpc_set_awaiting_limit(struct rpc_context *rpc, int limit);
 
 /*
  * Set which UID/GIDs to use in the authenticator.
@@ -2107,49 +2070,6 @@ EXTERN int rpc_nlm4_cancel_async(struct rpc_context *rpc, rpc_cb cb,
 struct NLM4_UNLOCKargs;
 EXTERN int rpc_nlm4_unlock_async(struct rpc_context *rpc, rpc_cb cb,
                                  struct NLM4_UNLOCKargs *args,
-                                 void *private_data);
-
-/*
- * Call NLM/SHARE
- *
- * Function returns
- *  0 : The command was queued successfully. The callback will be invoked once
- *      the command completes.
- * <0 : An error occured when trying to queue the command.
- *      The callback will not be invoked.
- *
- * When the callback is invoked, status indicates the result:
- * RPC_STATUS_SUCCESS : We got a successful response from the server.
- *                      data is NLM4_LOCKres *.
- * RPC_STATUS_ERROR   : The command failed with an error.
- *                      data is the error string.
- * RPC_STATUS_CANCEL  : The command was cancelled.
- *                      data is NULL.
- */
-struct NLM4_SHAREargs;
-EXTERN int rpc_nlm4_share_async(struct rpc_context *rpc, rpc_cb cb,
-                               struct NLM4_SHAREargs *args,
-                               void *private_data);
-
-/*
- * Call NLM/UNSHARE
- *
- * Function returns
- *  0 : The command was queued successfully. The callback will be invoked once
- *      the command completes.
- * <0 : An error occured when trying to queue the command.
- *      The callback will not be invoked.
- *
- * When the callback is invoked, status indicates the result:
- * RPC_STATUS_SUCCESS : We got a successful response from the server.
- *                      data is NLM4_UNLOCKres *.
- * RPC_STATUS_ERROR   : The command failed with an error.
- *                      data is the error string.
- * RPC_STATUS_CANCEL  : The command was cancelled.
- *                      data is NULL.
- */
-EXTERN int rpc_nlm4_unshare_async(struct rpc_context *rpc, rpc_cb cb,
-                                 struct NLM4_SHAREargs *args,
                                  void *private_data);
 
 /*
