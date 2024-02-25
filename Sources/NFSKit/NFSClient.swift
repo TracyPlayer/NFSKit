@@ -20,7 +20,7 @@ public class NFSClient: NSObject {
     public private(set) var gid: Int32 = 0
     public private(set) var uid: Int32 = 0
 
-    public var context: NFSContext?
+    public private(set) var context: NFSContext?
     fileprivate let q: DispatchQueue
     fileprivate let connectLock = NSLock()
     fileprivate let operationLock = NSCondition()
