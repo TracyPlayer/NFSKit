@@ -8,26 +8,22 @@
 import Foundation
 import nfs
 
-struct Parser {
-    
-    static func toVoid(_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> Void {
-        return
+enum Parser {
+    static func toVoid(_: UnsafeMutablePointer<nfs_context>, _: UnsafeMutableRawPointer?) throws {}
+
+    static func toString(_: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> String {
+        try String(cString: dataPtr.unwrap().assumingMemoryBound(to: Int8.self))
     }
-    
-    static func toString(_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> String {
-        return try String(cString: dataPtr.unwrap().assumingMemoryBound(to: Int8.self))
+
+    static func toOpaquePointer(_: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> OpaquePointer {
+        try OpaquePointer(dataPtr.unwrap())
     }
-    
-    static func toOpaquePointer(_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> OpaquePointer {
-        return try OpaquePointer(dataPtr.unwrap())
+
+    static func tostatvfs(_: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> statvfs {
+        try dataPtr.unwrap().assumingMemoryBound(to: statvfs.self).pointee
     }
-    
-    static func tostatvfs(_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> statvfs {
-        return try dataPtr.unwrap().assumingMemoryBound(to: statvfs.self).pointee
+
+    static func tostat64(_: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> nfs_stat_64 {
+        try dataPtr.unwrap().assumingMemoryBound(to: nfs_stat_64.self).pointee
     }
-    
-    static func tostat64(_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> nfs_stat_64 {
-        return try dataPtr.unwrap().assumingMemoryBound(to: nfs_stat_64.self).pointee
-    }
-    
 }

@@ -5,39 +5,38 @@
 //  Created by alexiscn on 2021/7/17.
 //
 
-import nfs
 import Foundation
+import nfs
 
-class NFSContext {
-    
+public class NFSContext {
     var context: UnsafeMutablePointer<nfs_context>?
-    
+
     private var contextLock = NSRecursiveLock()
-    
+
     var timeout: TimeInterval
-    
+
     init(timeout: TimeInterval) throws {
         let _context = try nfs_init_context().unwrap()
-        self.context = _context
+        context = _context
         self.timeout = timeout
     }
-    
+
     deinit {
         if isConnected {
             try? disconnect()
         }
-        try? withThreadSafeContext({ context in
+        try? withThreadSafeContext { context in
             self.context = nil
             nfs_destroy_context(context)
-        })
+        }
     }
 }
 
 // MARK: Connectivity
+
 extension NFSContext {
-    
     func getexports(server: String) throws -> [String] {
-        return try async_await(dataHandler: { context, data in
+        try async_await(dataHandler: { _, data in
             let result = try data.unwrap().assumingMemoryBound(to: exports.self).pointee
             var export: exportnode? = result.pointee
             var list: [String] = []
@@ -53,19 +52,19 @@ extension NFSContext {
             return mount_getexports_async(rpc, server, NFSContext.rpc_handler, cbPtr)
         }).data
     }
- 
+
     func connect(server: String, export: String) throws {
         try async_await(execute: { context, cbPtr in
             nfs_mount_async(context, server, export, NFSContext.generic_handler, cbPtr)
         })
     }
-    
+
     func disconnect() throws {
         try async_await(execute: { context, cbPtr in
             nfs_umount_async(context, NFSContext.generic_handler, cbPtr)
         })
     }
-    
+
     func autoguid() throws -> (Int32, Int32) {
         let stat = try stat("/")
         let context = try context.unwrap()
@@ -78,57 +77,56 @@ extension NFSContext {
 }
 
 // MARK: - File Information
+
 extension NFSContext {
-    
     func stat(_ path: String) throws -> nfs_stat_64 {
-        return try async_await(dataHandler: Parser.tostat64, execute: { context, cbPtr in
+        try async_await(dataHandler: Parser.tostat64, execute: { context, cbPtr in
             nfs_stat64_async(context, path, NFSContext.generic_handler, cbPtr)
         }).data
     }
-    
+
     func statvfs(_ path: String) throws -> statvfs {
-        return try async_await(dataHandler: Parser.tostatvfs, execute: { context, cbPtr in
+        try async_await(dataHandler: Parser.tostatvfs, execute: { context, cbPtr in
             nfs_statvfs_async(context, path, NFSContext.generic_handler, cbPtr)
         }).data
     }
-    
+
     func readlink(_ path: String) throws -> String {
-        return try async_await(dataHandler: Parser.toString) { (context, cbPtr) -> Int32 in
+        try async_await(dataHandler: Parser.toString) { context, cbPtr -> Int32 in
             nfs_readlink_async(context, path, NFSContext.generic_handler, cbPtr)
         }.data
     }
 }
 
 extension NFSContext {
-    
     var isConnected: Bool {
         do {
-            return try withThreadSafeContext { (context) -> Bool in
+            return try withThreadSafeContext { context -> Bool in
                 context.pointee.server != nil && context.pointee.rpc.pointee.is_connected != 0
             }
         } catch {
             return false
         }
     }
-    
+
     var server: String? {
         if let server = context?.pointee.server {
             return String(cString: server)
         }
         return nil
     }
-    
+
     var export: String? {
         if let export = context?.pointee.export {
             return String(cString: export)
         }
         return nil
     }
-    
+
     var fileDescriptor: Int32 {
-        return (try? nfs_get_fd(context.unwrap())) ?? -1
+        (try? nfs_get_fd(context.unwrap())) ?? -1
     }
-    
+
     var error: String? {
         if context == nil {
             return nil
@@ -138,11 +136,11 @@ extension NFSContext {
         }
         return nil
     }
-    
+
     func whichEvents() throws -> Int16 {
-        return try Int16(truncatingIfNeeded: nfs_which_events(context.unwrap()))
+        try Int16(truncatingIfNeeded: nfs_which_events(context.unwrap()))
     }
-    
+
     func service(revents: Int32) throws {
         try withThreadSafeContext { context in
             let result = nfs_service(context, revents)
@@ -153,80 +151,77 @@ extension NFSContext {
             try POSIXError.throwIfError(result, description: error)
         }
     }
-    
 }
 
 // MARK: - File Operation
+
 extension NFSContext {
-    
     func mkdir(_ path: String) throws {
         try async_await(execute: { context, cbPtr in
             nfs_mkdir_async(context, path, NFSContext.generic_handler, cbPtr)
         })
     }
-    
+
     func rmdir(_ path: String) throws {
         try async_await(execute: { context, cbPtr in
             nfs_rmdir_async(context, path, NFSContext.generic_handler, cbPtr)
         })
     }
-    
+
     func unlink(_ path: String) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             nfs_unlink_async(context, path, NFSContext.generic_handler, cbPtr)
         }
     }
-    
+
     func rename(_ path: String, to newPath: String) throws {
         try async_await(execute: { context, cbPtr in
             nfs_rename_async(context, path, newPath, NFSContext.generic_handler, cbPtr)
         })
     }
-    
+
     func truncate(_ path: String, toLength: UInt64) throws {
-        try async_await { (context, cbPtr) -> Int32 in
+        try async_await { context, cbPtr -> Int32 in
             nfs_truncate_async(context, path, toLength, NFSContext.generic_handler, cbPtr)
         }
     }
 }
 
-
-
 // MARK: Async operation handler
+
 extension NFSContext {
-    
     private class CBData {
         var result: Int32 = 0
         var isFinished: Bool = false
-        var dataHandler: ((Int32, UnsafeMutableRawPointer?) -> Void)? = nil
+        var dataHandler: ((Int32, UnsafeMutableRawPointer?) -> Void)?
         var status: UInt32 {
-            return UInt32(bitPattern: result)
+            UInt32(bitPattern: result)
         }
     }
-    
+
     private func wait_for_reply(_ cb: inout CBData) throws {
         let startDate = Date()
         while !cb.isFinished {
             var pfd = pollfd()
             pfd.fd = fileDescriptor
             pfd.events = try whichEvents()
-            
+
             if pfd.fd < 0 || (poll(&pfd, 1, 1000) < 0 && errno != EAGAIN) {
                 throw POSIXError(.init(errno), description: error)
             }
-            
+
             if pfd.revents == 0 {
                 if timeout > 0, Date().timeIntervalSince(startDate) > timeout {
                     throw POSIXError(.ETIMEDOUT)
                 }
                 continue
             }
-            
+
             try service(revents: Int32(pfd.revents))
         }
     }
-    
-    static let generic_handler: nfs_cb = { error, nfs, data, cbdata in
+
+    static let generic_handler: nfs_cb = { error, _, data, cbdata in
         do {
             let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
             if error != 0 {
@@ -234,10 +229,10 @@ extension NFSContext {
             }
             cbdata.dataHandler?(error, data)
             cbdata.isFinished = true
-        } catch { }
+        } catch {}
     }
-    
-    static let rpc_handler: rpc_cb = { rpc, status, data, cbdata in
+
+    static let rpc_handler: rpc_cb = { _, status, data, cbdata in
         do {
             let cbdata = try cbdata.unwrap().bindMemory(to: CBData.self, capacity: 1).pointee
             if status != 0 {
@@ -245,9 +240,9 @@ extension NFSContext {
             }
             cbdata.dataHandler?(status, data)
             cbdata.isFinished = true
-        } catch { }
+        } catch {}
     }
-    
+
     func withThreadSafeContext<R>(_ handler: (UnsafeMutablePointer<nfs_context>) throws -> R) throws -> R {
         contextLock.lock()
         defer {
@@ -255,18 +250,19 @@ extension NFSContext {
         }
         return try handler(context.unwrap())
     }
-    
+
     typealias ContextHandler<R> = (_ context: UnsafeMutablePointer<nfs_context>, _ dataPtr: UnsafeMutableRawPointer?) throws -> R
-        
+
     @discardableResult
     func async_await(execute handler: ContextHandler<Int32>) throws -> Int32 {
-        return try async_await(dataHandler: { _, _ in }, execute: handler).result
+        try async_await(dataHandler: { _, _ in }, execute: handler).result
     }
-    
+
     @discardableResult
     func async_await<DataType>(dataHandler: @escaping ContextHandler<DataType>, execute handler: ContextHandler<Int32>)
-            throws -> (result: Int32, data: DataType) {
-        return try withThreadSafeContext { (context) -> (Int32, DataType) in
+        throws -> (result: Int32, data: DataType)
+    {
+        try withThreadSafeContext { context -> (Int32, DataType) in
             var cb = CBData()
             var resultData: DataType?
             var dataHandlerError: Error?
@@ -282,7 +278,7 @@ extension NFSContext {
             try POSIXError.throwIfError(result, description: error)
             try wait_for_reply(&cb)
             let cbResult = cb.result
-            
+
             try POSIXError.throwIfError(cbResult, description: error)
             if let error = dataHandlerError { throw error }
             return try (cbResult, resultData.unwrap())
