@@ -64,7 +64,7 @@ public class NFSFileHandle {
         try? nfs_get_fh(handle).unwrap().pointee
     }
 
-    func close() {
+    public func close() {
         guard let handle else { return }
         self.handle = nil
         _ = try? context.withThreadSafeContext { context in
