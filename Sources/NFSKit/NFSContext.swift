@@ -99,7 +99,7 @@ extension NFSContext {
 }
 
 extension NFSContext {
-    var isConnected: Bool {
+    public var isConnected: Bool {
         do {
             return try withThreadSafeContext { context -> Bool in
                 context.pointee.server != nil && context.pointee.rpc.pointee.is_connected != 0
